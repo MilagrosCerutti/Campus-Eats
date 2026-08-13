@@ -1,0 +1,399 @@
+import { getDb, withTransaction } from "../database/db.js";
+import { ORDENES_PEDIDO } from "../domain/constants.js";
+import { AppError } from "../utils/AppErrors.js";
+import { getBusinessDate } from "../utils/date.js";
+
+const PEDIDO_SELECT = `
+    p.id, p.menuId, p.usuarioId, p.fecha, p.cantidad, p.turnoEntrega,
+    p.puntoRetiroId, p.total, p.estado, p.observaciones,
+    m.nombre AS menuNombre, u.nombre AS usuarioNombre,
+    s.nombre AS puntoRetiroNombre, s.direccion AS puntoRetiroDireccion
+`;
+
+async function fetchPedidoById(db, id) {
+    const pedido = await db.get(
+        `SELECT ${PEDIDO_SELECT}
+         FROM pedidos p
+         JOIN menus m ON m.id = p.menuId
+         JOIN usuarios u ON u.id = p.usuarioId
+         LEFT JOIN sedes s ON s.id = p.puntoRetiroId
+         WHERE p.id = ?`,
+        [id]
+    );
+    if (!pedido) throw AppError("Pedido no encontrado", 404);
+    return pedido;
+}
+
+async function registrarHistorial(db, { pedidoId, usuarioId, accion, valorAnterior = null, valorNuevo = null }) {
+    await db.run(
+        `INSERT INTO historial_pedidos (pedidoId, usuarioId, accion, fechaHora, valorAnterior, valorNuevo)
+         VALUES (?, ?, ?, ?, ?, ?)`,
+        [
+            pedidoId,
+            usuarioId,
+            accion,
+            new Date().toISOString(),
+            valorAnterior ? JSON.stringify(valorAnterior) : null,
+            valorNuevo ? JSON.stringify(valorNuevo) : null,
+        ]
+    );
+}
+
+async function calcularCupoDisponible(db, menuId, fecha, excluirPedidoId = -1) {
+    const row = await db.get(
+        `SELECT m.cupoDiario - COALESCE(SUM(
+             CASE WHEN p.estado IN ('pendiente', 'confirmado') THEN p.cantidad ELSE 0 END
+         ), 0) AS cupoDisponible
+         FROM menus m
+         LEFT JOIN pedidos p ON p.menuId = m.id AND p.fecha = ? AND p.id != ?
+         WHERE m.id = ?
+         GROUP BY m.id`,
+        [fecha, excluirPedidoId, menuId]
+    );
+    return row?.cupoDisponible ?? 0;
+}
+
+export async function listarPedidos({
+    usuarioId,
+    rol,
+    estado,
+    fecha,
+    menuId,
+    tipo,
+    page = 1,
+    limit = 10,
+    sortBy = "fecha",
+    order = "desc",
+}) {
+    const db = await getDb();
+    const condiciones = [];
+    const params = [];
+
+    if (rol === "usuario") {
+        condiciones.push("p.usuarioId = ?");
+        params.push(usuarioId);
+    }
+    if (estado) {
+        condiciones.push("p.estado = ?");
+        params.push(estado);
+    }
+    if (fecha) {
+        condiciones.push("p.fecha = ?");
+        params.push(fecha);
+    }
+    if (menuId) {
+        condiciones.push("p.menuId = ?");
+        params.push(menuId);
+    }
+    if (tipo) {
+        condiciones.push("m.tipo = ?");
+        params.push(tipo);
+    }
+
+    const where = condiciones.length ? `WHERE ${condiciones.join(" AND ")}` : "";
+    const col = ORDENES_PEDIDO.includes(sortBy) ? sortBy : "fecha";
+    const direction = order === "asc" ? "ASC" : "DESC";
+    const offset = (page - 1) * limit;
+
+    const [pedidos, conteo] = await Promise.all([
+        db.all(
+            `SELECT ${PEDIDO_SELECT}
+             FROM pedidos p
+             JOIN menus m ON m.id = p.menuId
+             JOIN usuarios u ON u.id = p.usuarioId
+             LEFT JOIN sedes s ON s.id = p.puntoRetiroId
+             ${where}
+             ORDER BY p.${col} ${direction}, p.id ${direction}
+             LIMIT ? OFFSET ?`,
+            [...params, limit, offset]
+        ),
+        db.get(
+            `SELECT COUNT(*) AS total
+             FROM pedidos p
+             JOIN menus m ON m.id = p.menuId
+             ${where}`,
+            params
+        ),
+    ]);
+
+    return { pedidos, total: conteo.total, page, limit, sortBy: col, order };
+}
+
+export async function obtenerPedido(id, usuarioId, rol) {
+    const db = await getDb();
+    const pedido = await fetchPedidoById(db, id);
+    if (rol === "usuario" && pedido.usuarioId !== usuarioId) {
+        throw AppError("No tenes acceso a este pedido", 403);
+    }
+    return pedido;
+}
+
+export async function crearPedido({ menuId, usuarioId, fecha, cantidad, turnoEntrega, puntoRetiroId, observaciones }) {
+    return withTransaction(async (txDb) => {
+        const menu = await txDb.get("SELECT * FROM menus WHERE id = ?", [menuId]);
+        if (!menu) throw AppError("Menu no encontrado", 404);
+        if (!menu.activo) throw AppError("El menu no esta activo", 400);
+        if (menu.fecha !== fecha) throw AppError("El menu no esta disponible para esa fecha", 400);
+
+        const sede = await txDb.get("SELECT id FROM sedes WHERE id = ? AND activo = 1", [puntoRetiroId]);
+        if (!sede) throw AppError("Sede de retiro no encontrada o inactiva", 400);
+
+        const cupoDisponible = await calcularCupoDisponible(txDb, menuId, fecha);
+        if (cantidad > cupoDisponible) {
+            throw AppError(`Cupo insuficiente. Disponible: ${cupoDisponible}`, 400);
+        }
+
+        const total = menu.precio * cantidad;
+        const { lastID } = await txDb.run(
+            `INSERT INTO pedidos (menuId, usuarioId, fecha, cantidad, turnoEntrega, puntoRetiroId, total, estado, observaciones)
+             VALUES (?, ?, ?, ?, ?, ?, ?, 'pendiente', ?)`,
+            [menuId, usuarioId, fecha, cantidad, turnoEntrega, puntoRetiroId, total, observaciones ?? null]
+        );
+
+        await registrarHistorial(txDb, {
+            pedidoId: lastID,
+            usuarioId,
+            accion: "creacion",
+            valorNuevo: { estado: "pendiente", cantidad, total },
+        });
+
+        return fetchPedidoById(txDb, lastID);
+    });
+}
+
+export async function editarPedido(id, usuarioId, rol, { menuId, cantidad, turnoEntrega, puntoRetiroId, observaciones }) {
+    if ([menuId, cantidad, turnoEntrega, puntoRetiroId, observaciones].every(value => value === undefined)) {
+        throw AppError("Debes enviar al menos un campo para editar", 400);
+    }
+
+    return withTransaction(async (txDb) => {
+        const pedido = await txDb.get("SELECT * FROM pedidos WHERE id = ?", [id]);
+        if (!pedido) throw AppError("Pedido no encontrado", 404);
+        if (rol === "usuario" && pedido.usuarioId !== usuarioId) {
+            throw AppError("No tenes acceso a este pedido", 403);
+        }
+        if (!["pendiente", "confirmado"].includes(pedido.estado)) {
+            throw AppError("Solo se pueden editar pedidos pendientes o confirmados", 400);
+        }
+
+        if (puntoRetiroId !== undefined) {
+            const sede = await txDb.get("SELECT id FROM sedes WHERE id = ? AND activo = 1", [puntoRetiroId]);
+            if (!sede) throw AppError("Sede de retiro no encontrada o inactiva", 400);
+        }
+
+        const nuevoMenuId = menuId ?? pedido.menuId;
+        const menu = await txDb.get("SELECT * FROM menus WHERE id = ?", [nuevoMenuId]);
+        if (!menu) throw AppError("Menu no encontrado", 404);
+        if (!menu.activo) throw AppError("El menu no esta activo", 400);
+        if (menu.fecha !== pedido.fecha) throw AppError("El menu no esta disponible para esa fecha", 400);
+
+        const nuevaCantidad = cantidad ?? pedido.cantidad;
+        if (nuevoMenuId !== pedido.menuId || nuevaCantidad !== pedido.cantidad) {
+            const cupoDisponible = await calcularCupoDisponible(txDb, nuevoMenuId, pedido.fecha, id);
+            if (nuevaCantidad > cupoDisponible) {
+                throw AppError(`Cupo insuficiente. Disponible: ${cupoDisponible}`, 400);
+            }
+        }
+
+        const nuevoTotal = menu.precio * nuevaCantidad;
+        const valorAnterior = {
+            menuId: pedido.menuId,
+            cantidad: pedido.cantidad,
+            turnoEntrega: pedido.turnoEntrega,
+            puntoRetiroId: pedido.puntoRetiroId,
+            total: pedido.total,
+            observaciones: pedido.observaciones,
+        };
+
+        const result = await txDb.run(
+            `UPDATE pedidos
+             SET menuId = ?, cantidad = ?, turnoEntrega = ?, puntoRetiroId = ?, total = ?, observaciones = ?
+             WHERE id = ? AND estado = ?`,
+            [
+                nuevoMenuId,
+                nuevaCantidad,
+                turnoEntrega ?? pedido.turnoEntrega,
+                puntoRetiroId ?? pedido.puntoRetiroId,
+                nuevoTotal,
+                observaciones ?? pedido.observaciones,
+                id,
+                pedido.estado,
+            ]
+        );
+        if (result.changes !== 1) {
+            throw AppError("El pedido cambio mientras se procesaba la solicitud", 409);
+        }
+
+        await registrarHistorial(txDb, {
+            pedidoId: id,
+            usuarioId,
+            accion: "edicion",
+            valorAnterior,
+            valorNuevo: {
+                menuId: nuevoMenuId,
+                cantidad: nuevaCantidad,
+                turnoEntrega: turnoEntrega ?? pedido.turnoEntrega,
+                puntoRetiroId: puntoRetiroId ?? pedido.puntoRetiroId,
+                total: nuevoTotal,
+                observaciones: observaciones ?? pedido.observaciones,
+            },
+        });
+
+        return fetchPedidoById(txDb, id);
+    });
+}
+
+const TRANSICIONES = {
+    pendiente: { confirmado: ["admin"], cancelado: ["admin", "usuario"] },
+    confirmado: { cancelado: ["admin", "usuario"], entregado: ["admin"] },
+};
+
+export async function cambiarEstado(id, nuevoEstado, usuarioId, rol) {
+    return withTransaction(async (txDb) => {
+        const pedido = await txDb.get("SELECT * FROM pedidos WHERE id = ?", [id]);
+        if (!pedido) throw AppError("Pedido no encontrado", 404);
+
+        const rolesPermitidos = TRANSICIONES[pedido.estado]?.[nuevoEstado];
+        if (!rolesPermitidos) {
+            throw AppError(`No se puede pasar de "${pedido.estado}" a "${nuevoEstado}"`, 400);
+        }
+        if (!rolesPermitidos.includes(rol)) {
+            throw AppError("No tenes permisos para esta transicion", 403);
+        }
+        if (rol === "usuario" && pedido.usuarioId !== usuarioId) {
+            throw AppError("No tenes acceso a este pedido", 403);
+        }
+
+        const result = await txDb.run(
+            "UPDATE pedidos SET estado = ? WHERE id = ? AND estado = ?",
+            [nuevoEstado, id, pedido.estado]
+        );
+        if (result.changes !== 1) {
+            throw AppError("El pedido cambio mientras se procesaba la solicitud", 409);
+        }
+
+        await registrarHistorial(txDb, {
+            pedidoId: id,
+            usuarioId,
+            accion: `estado:${pedido.estado}->${nuevoEstado}`,
+            valorAnterior: { estado: pedido.estado },
+            valorNuevo: { estado: nuevoEstado },
+        });
+
+        return fetchPedidoById(txDb, id);
+    });
+}
+
+export async function obtenerResumen() {
+    const db = await getDb();
+    const hoy = getBusinessDate();
+
+    const [
+        porEstado,
+        pedidosPorFecha,
+        pedidosPendientesPorFecha,
+        cuposRestantesPorMenu,
+        importeEstimadoConfirmados,
+        pedidosPendientesEntrega,
+        recaudado,
+        menuDelDia,
+    ] = await Promise.all([
+        db.all(
+            `SELECT estado, COUNT(*) AS cantidad, SUM(total) AS totalMonto
+             FROM pedidos GROUP BY estado`
+        ),
+        db.all(
+            `SELECT fecha, COUNT(*) AS cantidadPedidos, SUM(cantidad) AS cantidadViandas
+             FROM pedidos
+             WHERE estado != 'cancelado'
+             GROUP BY fecha
+             ORDER BY fecha ASC`
+        ),
+        db.all(
+            `SELECT fecha, COUNT(*) AS cantidadPedidos, SUM(cantidad) AS cantidadViandas
+             FROM pedidos
+             WHERE estado = 'pendiente'
+             GROUP BY fecha
+             ORDER BY fecha ASC`
+        ),
+        db.all(
+            `SELECT
+                m.id AS menuId,
+                m.nombre AS menuNombre,
+                m.fecha,
+                m.cupoDiario,
+                COALESCE(SUM(
+                    CASE WHEN p.estado IN ('pendiente', 'confirmado') THEN p.cantidad ELSE 0 END
+                ), 0) AS cupoReservado,
+                m.cupoDiario - COALESCE(SUM(
+                    CASE WHEN p.estado IN ('pendiente', 'confirmado') THEN p.cantidad ELSE 0 END
+                ), 0) AS cupoDisponible
+             FROM menus m
+             LEFT JOIN pedidos p ON p.menuId = m.id AND p.fecha = m.fecha
+             GROUP BY m.id
+             ORDER BY m.fecha ASC, m.nombre ASC`
+        ),
+        db.get(
+            `SELECT COALESCE(SUM(total), 0) AS total
+             FROM pedidos WHERE estado = 'confirmado'`
+        ),
+        db.all(
+            `SELECT ${PEDIDO_SELECT}
+             FROM pedidos p
+             JOIN menus m ON m.id = p.menuId
+             JOIN usuarios u ON u.id = p.usuarioId
+             LEFT JOIN sedes s ON s.id = p.puntoRetiroId
+             WHERE p.estado = 'confirmado'
+             ORDER BY p.fecha ASC, p.id ASC`
+        ),
+        db.get(
+            `SELECT COALESCE(SUM(total), 0) AS total
+             FROM pedidos WHERE estado IN ('confirmado', 'entregado')`
+        ),
+        db.get(
+            `SELECT m.nombre, SUM(p.cantidad) AS totalPedido
+             FROM pedidos p
+             JOIN menus m ON m.id = p.menuId
+             WHERE p.fecha = ? AND p.estado != 'cancelado'
+             GROUP BY p.menuId
+             ORDER BY totalPedido DESC
+             LIMIT 1`,
+            [hoy]
+        ),
+    ]);
+
+    return {
+        porEstado,
+        pedidosPorFecha,
+        pedidosPendientesPorFecha,
+        cuposRestantesPorMenu,
+        importeEstimadoConfirmados: importeEstimadoConfirmados.total,
+        pedidosPendientesEntrega,
+        recaudado: recaudado.total,
+        menuDelDia,
+    };
+}
+
+export async function obtenerHistorial(pedidoId, usuarioId, rol) {
+    const db = await getDb();
+    const pedido = await db.get("SELECT usuarioId FROM pedidos WHERE id = ?", [pedidoId]);
+    if (!pedido) throw AppError("Pedido no encontrado", 404);
+    if (rol === "usuario" && pedido.usuarioId !== usuarioId) {
+        throw AppError("No tenes acceso a este pedido", 403);
+    }
+
+    const historial = await db.all(
+        `SELECT h.*, u.nombre AS usuarioNombre
+         FROM historial_pedidos h
+         JOIN usuarios u ON u.id = h.usuarioId
+         WHERE h.pedidoId = ?
+         ORDER BY h.fechaHora ASC`,
+        [pedidoId]
+    );
+
+    return historial.map(item => ({
+        ...item,
+        valorAnterior: item.valorAnterior ? JSON.parse(item.valorAnterior) : null,
+        valorNuevo: item.valorNuevo ? JSON.parse(item.valorNuevo) : null,
+    }));
+}
