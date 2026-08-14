@@ -213,6 +213,9 @@ Authorization: Bearer <jwt>
 | `SEED_ON_START` | No | `false` | Ejecuta el seed demo al iniciar |
 | `SYNC_MENUS_ON_START` | No | `true` | Inserta menus seed faltantes al iniciar |
 | `SYNC_SEDES_ON_START` | No | `true` | Inserta sedes seed faltantes al iniciar |
+| `DEMO_ADMIN_ENABLED` | No | `false` | Crea (una sola vez, de forma idempotente) un usuario admin de demostración al iniciar |
+| `DEMO_ADMIN_EMAIL` | Si `DEMO_ADMIN_ENABLED=true` | Sin default | Email del admin demo |
+| `DEMO_ADMIN_PASSWORD` | Si `DEMO_ADMIN_ENABLED=true` | Sin default | Password del admin demo (se hashea con bcrypt, nunca se guarda en texto plano) |
 
 Para autorizar varios frontends:
 

@@ -34,6 +34,9 @@ export const SYNC_MENUS_ON_START = process.env.SYNC_MENUS_ON_START !== "false";
 export const SYNC_SEDES_ON_START = process.env.SYNC_SEDES_ON_START !== "false";
 export const SYNC_MENU_AVAILABILITY_ON_START = process.env.SYNC_MENU_AVAILABILITY_ON_START !== "false";
 export const SYNC_MENU_AVAILABILITY_INTERVAL_MS = Number(process.env.SYNC_MENU_AVAILABILITY_INTERVAL_MS) || 60 * 60 * 1000;
+export const DEMO_ADMIN_ENABLED = process.env.DEMO_ADMIN_ENABLED === "true";
+export const DEMO_ADMIN_EMAIL = process.env.DEMO_ADMIN_EMAIL;
+export const DEMO_ADMIN_PASSWORD = process.env.DEMO_ADMIN_PASSWORD;
 
 if (!Number.isInteger(TRUST_PROXY_HOPS) || TRUST_PROXY_HOPS < 0) {
     throw new Error("TRUST_PROXY_HOPS debe ser un numero entero mayor o igual a 0");

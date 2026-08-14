@@ -9,6 +9,7 @@
     "dev": "nodemon src/server.js",
     "init-db": "node src/database/initDb.js",
     "seed": "node src/database/seedDb.js",
+    "seed-demo-admin": "node src/database/seedDemoAdmin.js",
     "sync-menus": "node src/database/syncMenus.js",
     "sync-sedes": "node src/database/syncSedes.js",
     "sync-menu-images": "node src/database/syncMenuImages.js",

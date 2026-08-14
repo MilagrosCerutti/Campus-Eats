@@ -7,9 +7,13 @@ import {
     SYNC_SEDES_ON_START,
     SYNC_MENU_AVAILABILITY_ON_START,
     SYNC_MENU_AVAILABILITY_INTERVAL_MS,
+    DEMO_ADMIN_ENABLED,
+    DEMO_ADMIN_EMAIL,
+    DEMO_ADMIN_PASSWORD,
 } from "./config/env.js";
 import { initDb } from "./database/initDb.js";
 import { seedDb } from "./database/seedDb.js";
+import { seedDemoAdmin } from "./database/seedDemoAdmin.js";
 import { syncMenus } from "./database/syncMenus.js";
 import { syncSedes } from "./database/syncSedes.js";
 import { syncMenuAvailability } from "./database/syncMenuAvailability.js";
@@ -19,9 +23,15 @@ if (!JWT_SECRET) {
     process.exit(1);
 }
 
+if (DEMO_ADMIN_ENABLED && (!DEMO_ADMIN_EMAIL || !DEMO_ADMIN_PASSWORD)) {
+    console.error("FATAL: DEMO_ADMIN_ENABLED=true requiere DEMO_ADMIN_EMAIL y DEMO_ADMIN_PASSWORD.");
+    process.exit(1);
+}
+
 try {
     await initDb();
     if (SEED_ON_START) await seedDb();
+    if (DEMO_ADMIN_ENABLED) await seedDemoAdmin();
     if (SYNC_MENUS_ON_START) await syncMenus();
     if (SYNC_SEDES_ON_START) await syncSedes();
     if (SYNC_MENU_AVAILABILITY_ON_START) await syncMenuAvailability();
