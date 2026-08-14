@@ -6,9 +6,12 @@ Aplicación web full-stack para gestionar pedidos de viandas con cupos diarios, 
 </div>
 
 ## Demo
-Aplicación: https://campus-eats-myapp.vercel.app/
-Usuario demo: admin.demo@campuseats.com
-Contraseña demo: CampusEatsDemo2026!
+
+**Aplicación:** https://campus-eats-myapp.vercel.app/
+
+**Usuario demo:** `admin.demo@campuseats.com`
+
+**Contraseña demo:** `CampusEatsDemo2026!`
 
 ## Repositorios
 
