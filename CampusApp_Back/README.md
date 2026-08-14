@@ -55,7 +55,7 @@ git --version
 ### 1. Clonar e instalar dependencias
 
 ```bash
-git clone https://github.com/MilagrosCerutti/Campus-Eats/tree/main/CampusApp_Back
+git clone https://github.com/MilagrosCerutti/Campus-Eats/tree/master/CampusApp_Back
 cd CampusApp_Back
 npm install
 ```

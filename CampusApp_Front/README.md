@@ -89,7 +89,7 @@ Antes de comenzar, instalar:
 
 Para ejecutar la aplicación completa también se necesita el backend:
 
-- [ViandaApp_Back](https://github.com/MilagrosCerutti/Campus-Eats/tree/main/CampusApp_Back)
+- [ViandaApp_Back](https://github.com/MilagrosCerutti/Campus-Eats/tree/master/CampusApp_Back)
 
 Puertos utilizados por defecto:
 
@@ -113,8 +113,8 @@ Viandas/
 ### 1. Clonar ambos repositorios
 
 ```bash
-git clone https://github.com/MilagrosCerutti/Campus-Eats/tree/main/CampusApp_Back
-git clone https://github.com/MilagrosCerutti/Campus-Eats/tree/main/CampusApp_Front
+git clone https://github.com/MilagrosCerutti/Campus-Eats/tree/master/CampusApp_Back
+git clone https://github.com/MilagrosCerutti/Campus-Eats/tree/master/CampusApp_Front
 ```
 
 ### 2. Preparar y ejecutar el backend

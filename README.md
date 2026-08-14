@@ -10,13 +10,13 @@ Aplicación web full-stack para gestionar pedidos de viandas con cupos diarios, 
 
 | Parte | Tecnología | Repositorio |
 |---|---|---|
-| Backend | Node.js · Express · SQLite | https://github.com/MilagrosCerutti/Campus-Eats/tree/main/CampusApp_Back |
-| Frontend | React 19 · Vite · Tailwind | https://github.com/MilagrosCerutti/Campus-Eats/tree/main/CampusApp_Front |
+| Backend | Node.js · Express · SQLite | https://github.com/MilagrosCerutti/Campus-Eats/tree/master/CampusApp_Back |
+| Frontend | React 19 · Vite · Tailwind | https://github.com/MilagrosCerutti/Campus-Eats/tree/master/CampusApp_Front |
 
 Cada repositorio contiene su propio `README.md` con instrucciones detalladas de instalación, configuración y uso:
 
-- **Backend:** ver [`README.md` del backend](https://github.com/MilagrosCerutti/Campus-Eats/tree/main/CampusApp_Back)
-- **Frontend:** ver [`README.md` del frontend](https://github.com/MilagrosCerutti/Campus-Eats/tree/main/CampusApp_Front)
+- **Backend:** ver [`README.md` del backend](https://github.com/MilagrosCerutti/Campus-Eats/tree/master/CampusApp_Back)
+- **Frontend:** ver [`README.md` del frontend](https://github.com/MilagrosCerutti/Campus-Eats/tree/master/CampusApp_Front)
 
 ---
 
@@ -27,7 +27,7 @@ El sistema necesita **backend y frontend corriendo en simultáneo**.
 ### 1 — Backend
 
 ```bash
-git clone https://github.com/MilagrosCerutti/Campus-Eats/tree/main/CampusApp_Back
+git clone https://github.com/MilagrosCerutti/Campus-Eats/tree/master/CampusApp_Back
 cd CampusApp_Back
 npm install
 cp .env.example .env        # editar JWT_SECRET
@@ -39,7 +39,7 @@ npm run dev                 # http://localhost:3000
 ### 2 — Frontend
 
 ```bash
-git clone https://github.com/MilagrosCerutti/Campus-Eats/tree/main/CampusApp_Front
+git clone https://github.com/MilagrosCerutti/Campus-Eats/tree/master/CampusApp_Front
 cd CampusApp_Front
 npm install
 cp .env.example .env.local  # VITE_API_URL=http://localhost:3000/api
@@ -102,7 +102,7 @@ Creados por `npm run seed` en el backend:
 | `PATCH` | `/api/pedidos/:id/confirmar` | Admin | Confirmar pedido |
 | `PATCH` | `/api/pedidos/:id/entregar` | Admin | Marcar como entregado |
 
-Listado completo de endpoints en el [README del backend](https://github.com/MilagrosCerutti/Campus-Eats/tree/main/CampusApp_Back#endpoints).
+Listado completo de endpoints en el [README del backend](https://github.com/MilagrosCerutti/Campus-Eats/tree/master/CampusApp_Back#endpoints).
 
 ---
 
