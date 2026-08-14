@@ -4,7 +4,11 @@ Aplicación web full-stack para gestionar pedidos de viandas con cupos diarios, 
 <div align="center">
   <img src="./CampusApp_Front/docs/assets/viandasInspiration.jpg" alt="Campus Eats" width="100%" />
 </div>
----
+
+## Demo
+Aplicación: https://campus-eats-myapp.vercel.app/
+Usuario demo: admin.demo@campuseats.com
+Contraseña demo: CampusEatsDemo2026!
 
 ## Repositorios
 
